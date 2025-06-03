@@ -7,6 +7,7 @@ import Data.List (singleton)
 import Data.Ord (comparing)
 import Data.Tree
 import qualified DurationMonad
+import DurationMonad (getValue)
 
 -- List of adventurers
 data Adventurer = P1 | P2 | P5 | P10 deriving (Show,Eq)
@@ -91,6 +92,9 @@ allValidPlaysList s | s lantern = [Duration(getTimeAdv p1 , (mChangeState [lante
                 | otherwise = [Duration(getTimeAdv p1 , (mChangeState [lantern,Left p1] s)) | p1 <- leftSideAdv s]
                                 ++ [Duration((uncurry max) (getTimeAdv p1,getTimeAdv p2), (mChangeState [lantern,Left p1, Left p2] s)) | (p1,p2) <- makePairs $ leftSideAdv s]  
 
+mAllValidPlaysList :: Duration State -> [Duration State]
+mAllValidPlaysList s = (s *>) <$> (allValidPlaysList $ getValue s)
+
 allValidPlays :: State -> ListDur State
 allValidPlays = LD . allValidPlaysList
 
@@ -99,14 +103,15 @@ addLevel :: (a -> [a]) -> Tree a -> Tree a
 addLevel f (Node x [])     = Node x [ Node l [] | l <- (f x)] 
 addLevel f (Node x forest) = Node x $ (addLevel f) <$> forest 
 
-search :: ((Duration State) -> Bool) -> Tree (Duration State) -> Bool
-search goal stateTree = (any goal) ((last . levels) stateTree) 
-                        || search goal (addLevel (\(Duration (d,s)) -> map (\(Duration (d',x)) -> Duration (d'+ d,x)) (allValidPlaysList s)) stateTree)
+bfs :: ((Duration State) -> Bool) -> Tree (Duration State) -> Bool
+bfs goal stateTree = (any goal) ((last . levels) stateTree) || bfs goal (expand stateTree) 
+  where expand = addLevel mAllValidPlaysList
+  -- expand the state and map x*> to the result, adding the duration to it 
 
-f = search (\(Duration (d,s)) -> d >= 10) (Node (Duration (0, gInit)) [])
+f = bfs (\(Duration (d,s)) -> d >= 10) (Node (Duration (0, gInit)) [])
 
-searchIO :: ((Duration State) -> Bool) -> Tree (Duration State) -> IO Bool
-searchIO goal stateTree = do
+bfsIO :: ((Duration State) -> Bool) -> Tree (Duration State) -> IO Bool
+bfsIO goal stateTree = do
   let currentLevel = last (levels stateTree)
   putStrLn $ "Current level: " ++ show (map getValue currentLevel)
 
@@ -118,7 +123,7 @@ searchIO goal stateTree = do
     else do
       let nextTree = addLevel (allValidPlaysList . getValue) stateTree
       putStrLn "Recursing to next level..."
-      searchIO goal nextTree
+      bfsIO goal nextTree
 
 
 {-- 
@@ -158,11 +163,14 @@ uniform_plus_minus_ :: Float -> Dist Float
 uniform_plus_minus_ = uniform . (\d -> [d-d/2 , d , d+d/2])
 
 play :: Move -> State -> DistDur State
---play  (Left a) s = 
---  let
---     time_dist  = uniform_plus_minus_ getTimeAdv a
---   dist_state =  <$> time_dist      
-play (Left a) s   =     DD . uniform_plus_minus $ Duration (getTimeAdv a , (mChangeState [lantern,Left a] s)) 
+play  (Left a) s = 
+  let
+    next_state = mChangeState [lantern, Left a] s
+    time_dist  = uniform_plus_minus_ $ getTimeAdv a
+    dist_state =  (\d -> Duration (d, next_state)) <$> time_dist
+  in
+    DD dist_state
+
 play  (Right (a1,a2)) s = DD . uniform_plus_minus $ Duration (max (getTimeAdv a1) (getTimeAdv a2), (mChangeState [lantern,Left a1,Left a2] s))
 
 -- Extends the previous function to lists of movements
