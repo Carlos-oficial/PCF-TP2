@@ -2,6 +2,10 @@ module DurationMonad where
 
 -- Defining a monad (the duration monad) --
 
+-- it's a writer monad
+
+-- sames as liftM3 (\x y z-> x + y - z) <$> Just 1 <*> (pure 3) <*> (Just 2)
+
 data Duration a = Duration (Float, a) deriving (Show, Ord, Eq)
 
 getDuration :: Duration a -> Float
@@ -21,10 +25,11 @@ instance Applicative Duration where
   (Duration (i,f)) <*> (Duration (j, x)) = (Duration (i+j, f x))
   
 instance Monad Duration where
-    (Duration (i,x)) >>= k = Duration (i + (getDuration (k x)), getValue (k x))
-    return x = (Duration (0,x))
+  (Duration (i,x)) >>= k = Duration (i + (getDuration (k x)), getValue (k x))
+  return = pure
 
 wait1 :: Duration a -> Duration a
 wait1 = wait 1
+
 wait :: Float -> Duration a -> Duration a
-wait i (Duration (d,x)) = Duration (i + d, x) 
+wait i (Duration (d,x)) = Duration (i + d, x)
