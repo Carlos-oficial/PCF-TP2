@@ -2,7 +2,6 @@ module DurationMonad where
 
 import Control.Comonad
 
-
 -- Defining a monad (the duration monad) --
 
 -- it's a writer monad

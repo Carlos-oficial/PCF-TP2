@@ -1,5 +1,6 @@
 module ListUtils where
 
+import Data.Foldable
 
 -- create a singleton list
 -- 
@@ -24,3 +25,6 @@ onNth n f xs | n<1 = xs
 onNth n f xs = case splitAt (n-1) xs of
                  (ys,[])    -> ys
                  (ys,z:zs') -> ys++f z:zs' 
+
+showList_ :: (Show a,Functor f, Foldable f )=> f a -> IO()
+showList_ a = putStrLn $ unlines $ show <$> (toList a)

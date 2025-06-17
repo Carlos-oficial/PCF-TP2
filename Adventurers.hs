@@ -29,7 +29,6 @@ instance Read Adventurer where
 -- Adventurers + the lantern
 type Objects = Either Adventurer ()
 
-
 {-- 
  - State of the game, i.e. the current position of each adventurer
  - + the lantern. The function (const False) represents the initial state of the
@@ -41,8 +40,14 @@ type Objects = Either Adventurer ()
 type State = Objects -> Bool
 
 instance Show State where
-  show s = show  (zipWith (\x y -> x ++ (if y then " R" else " L")) ["p1","p2","p5","p10","l"] sh)
-    where sh = map s univ
+  show s =
+    let l = leftSide  s
+        r = rightSide s
+        show' (Right _) = "[*]"
+        show' (Left a) = show a
+        bridge = " _ _ _ _ "
+    in
+      unwords $ (show' <$> l) ++ ( bridge :  (show' <$> r))
 
 
 instance Ord State where
@@ -128,6 +133,7 @@ instance Monad ListDur where
                      g x where
                        g(Duration (i,x)) = let u = (remLD (k x))
                           in map (\(Duration (i',x)) -> Duration (i + i', x)) u
+
 
 manyChoice :: [ListDur a] -> ListDur a
 manyChoice = LD . concat . (map remLD)
