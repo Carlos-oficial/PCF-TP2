@@ -1,5 +1,8 @@
 module DurationMonad where
 
+import Control.Comonad
+
+
 -- Defining a monad (the duration monad) --
 
 -- it's a writer monad
@@ -33,3 +36,8 @@ wait1 = wait 1
 
 wait :: Float -> Duration a -> Duration a
 wait i (Duration (d,x)) = Duration (i + d, x)
+
+-- Duration CoMonad
+instance Comonad Duration where
+  extract = getValue
+  duplicate = pure

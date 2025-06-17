@@ -10,10 +10,10 @@ import Control.Monad
 import Data.List (singleton,sort)
 import Data.Ord (comparing)
 import Data.Tree
-import qualified DurationMonad
-import DurationMonad (getValue, getDuration)
+import DurationMonad
 import Data.Either (Either(Left))
 import Data.Foldable (concatMap)
+import DurationMonad (getDuration)
 
 
 -- Time that each adventurer takes to cross the bridge
@@ -30,6 +30,7 @@ sameSideAsLantern state = filter (\x -> state x == state lantern) adventurers
  - For a given state of the game, the function presents 
  - all possible moves that the adventurers can make.  
 --}
+
 allValidPlaysList :: State -> [Duration State]
 allValidPlaysList s = 
             [
@@ -53,48 +54,30 @@ mAllValidPlaysList s = (s *>) <$> (allValidPlaysList $ getValue s)
 allValidPlays :: State -> ListDur State
 allValidPlays = LD . allValidPlaysList
 
-addLevel :: (a -> [a]) -> Tree a -> Tree a
-addLevel f (Node x [])     = Node x [ Node l [] | l <- (f x)] 
-addLevel f (Node x forest) = Node x $ (addLevel f) <$> forest 
-
-bfs :: ((Duration State) -> Bool) -> Tree (Duration State) -> Bool
-bfs goal stateTree = (any goal) ((last . levels) stateTree) || bfs goal (expand stateTree) 
-  where expand = addLevel mAllValidPlaysList
-
-f = bfs (\(Duration (d,s)) -> d >= 10) (Node (Duration (0, gInit)) [])
-
-bfsDebug :: ((Duration State) -> Bool) -> Tree (Duration State) -> IO Bool
-bfsDebug goal stateTree = do
-  let currentLevel = last (levels stateTree)
-  putStrLn $ "Current level: " ++ show (map getValue currentLevel)
-
-  let found = any goal currentLevel
-  putStrLn $ "Goal found in current level? " ++ show found
-
-  if found
-    then return True
-    else do
-      let nextTree = addLevel (allValidPlaysList . getValue) stateTree
-      putStrLn "Recursing to next level..."
-      bfsDebug goal nextTree
-
-
 {-- 
  - For a given number n and initial state, the function calculates
  - all possible n-sequences of moves that the adventures can make 
 --}
 
 exec :: Int -> State -> ListDur State
--- exec n = sequ [allValidPlays | x <- [1..n]]
 exec 0 s = return s 
 exec n s = do s' <- exec (n-1) s ; allValidPlays s' 
 
-exec' :: Int -> State -> ListDur State
-exec' 0 s = return s
-exec' n s = do s' <- allValidPlays s ; exec' (n-1) s'
+{--
+  - Another possible implementation of exec
+--}
 
+exec' n = sequ [allValidPlays | x <- [1..n]]
+
+{--
+  a version of exec that mantains all achieved states, uses the <> operator,
+  since ListDur is a monid
+--}
+
+exec_acum :: Int -> State -> ListDur State
 exec_acum 0 s = return s
 exec_acum n s = do s' <- allValidPlays s ; return s <> exec' (n-1) s' 
+
 
 exec_time_limit :: Float -> Duration State -> ListDur State
 exec_time_limit limit s = 
@@ -112,14 +95,13 @@ exec_time_limit limit s =
 
 leq17 :: Bool
 leq17 = any (\(Duration (d,s)) -> (safe s) && (d <= 17)) (remLD (exec_acum 5 gInit))  --true in exec 17 initial state undefined
--- leq17 = any (\(Duration (d,s)) -> (safe s) && (d <= 17)) ( remLD $ exec_time_limit 17 (return gInit))
 
 {-- Is it possible for all adventurers to be on the other side
  - in < 17 min ? 
 --}
+
 l17 :: Bool
 l17 = any (\(Duration (d,s)) -> (safe s) && (d < 17)) (remLD (exec_acum 8 gInit)) -- true in exec 17 initial state undefined
--- l17 = any (\(Duration (d,s)) -> (safe s) && (d < 17)) ( remLD $ exec_time_limit 17 (return gInit))
 
 --- END OF TASK 1 -------------------------------------------------
 
@@ -153,3 +135,90 @@ plays l s = foldM (flip play) s l
 -- plays (m:ms) s = do s' <- plays ms s ; play m s' 
 
 --- END OF TASK 2 -------------------------------------------------
+--- Task 3 ---
+
+--- Trees ----
+
+addLevel :: (a -> [a]) -> Tree a -> Tree a
+addLevel f (Node x [])     = Node x [ Node l [] | l <- (f x)] 
+addLevel f (Node x forest) = Node x $ (addLevel f) <$> forest 
+
+bfs :: ((Duration State) -> Bool) -> Tree (Duration State) -> Bool
+bfs goal stateTree = (any goal) ((last . levels) stateTree) || bfs goal (expand stateTree) 
+  where expand = addLevel mAllValidPlaysList
+
+f = bfs (\(Duration (d,s)) -> d >= 10) (Node (Duration (0, gInit)) [])
+
+bfsDebug :: ((Duration State) -> Bool) -> Tree (Duration State) -> IO Bool
+bfsDebug goal stateTree = do
+  let currentLevel = last (levels stateTree)
+  putStrLn $ "Current level: " ++ show (map getValue currentLevel)
+
+  let found = any goal currentLevel
+  putStrLn $ "Goal found in current level? " ++ show found
+
+  if found
+    then return True
+    else do
+      let nextTree = addLevel (allValidPlaysList . getValue) stateTree
+      putStrLn "Recursing to next level..."
+      bfsDebug goal nextTree
+
+leaf x = Node x []
+
+{-
+expandToTree stopping_criteria (Duration State)
+-}
+
+expandToTree ::  ((Duration State) -> Bool) -> (Duration State)  -> Tree (Duration State)
+expandToTree c ds = Node ds $ ( expandToTree c ) <$> ( filter (not . c) $ mAllValidPlaysList ds )
+
+l17' = any (safe.getValue) $ expandToTree ((>=17).getDuration) (return gInit)
+
+l17'' = bfsAny (safe . getValue) $ expandToTree (const False) (return gInit)
+
+bfsAny :: (a -> Bool) -> Tree a -> Bool
+bfsAny p n = trav p [n]
+  where
+    trav :: (a -> Bool) -> [Tree a] -> Bool
+    trav _ [] = False
+    trav p ((Node x []) : q) = (p x) || (trav p q)
+    trav p ((Node label st) : q) = (p label) || (trav p (q ++ st))
+    -- trav p (q ++ st)
+
+-- infinite search tree specific to the problem
+infiniteSearchTree :: (Duration State)  -> Tree (Duration State)
+infiniteSearchTree ds = Node ds $ infiniteSearchTree <$> ( mAllValidPlaysList ds )
+
+l17''' = 
+  bfsAny (\(Duration (d,s)) -> d <= 17 && safe s) $ 
+    infiniteSearchTree' mAllValidPlaysList (return gInit)
+
+
+-- more general generator for a infinite search tree
+infiniteSearchTree' :: (a -> [a]) -> a -> Tree a
+infiniteSearchTree' expand a = Node a $ (infiniteSearchTree' expand) <$> (expand a)
+
+
+-- bfs search that knows when to stop
+bfsAnyGiveUp :: (a -> Bool) -> (a -> Bool) -> Tree a -> Bool
+bfsAnyGiveUp p g n = trav [n]
+  where
+    -- trav :: [Tree a] -> Bool
+    trav [] = False
+    trav ((Node x []) : q) = (not $ g x) && ((p x) || trav q)
+
+-- mAllValidPlaysList s = (s *>) <$> (allValidPlaysList $ getValue s)
+
+infiniteSearchAsUnfold expand = unfoldTree (\a -> (a, expand a))
+
+infiniteSearchTree'' :: State  -> Tree (Duration State) 
+infiniteSearchTree'' n =
+  let initial :: Duration State = return n
+  in 
+    unfoldTree (\a -> (a, mAllValidPlaysList a)) initial
+
+leaves t =
+  let go (Node x []) z = x:z
+      go (Node _ ts) z = foldr go z ts
+  in go t []
